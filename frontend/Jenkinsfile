@@ -1,24 +1,61 @@
 pipeline {
-  agent any
+    agent any
 
-  stages {
-    stage('Install') {
-      steps {
-        sh 'npm install'
-      }
+    tools {
+        nodejs "Node-18"   // MUST match the exact name in Global Tool Configuration
     }
 
-    stage('Build') {
-      steps {
-        sh 'echo "Static frontend build completed"'
-      }
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        S3_BUCKET = 'cloudnative-project9989'
     }
 
-    stage('Deploy') {
-      steps {
-        echo 'Deploy to S3 + CloudFront'
-      }
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Prepare Files') {
+            steps {
+                echo 'Static website — no build step required'
+                sh 'ls -la public'
+            }
+        }
+
+        stage('Deploy to S3') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    sh '''
+                        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+                        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+                        aws configure set default.region $AWS_DEFAULT_REGION
+
+                        aws s3 sync public/ s3://$S3_BUCKET --delete
+                    '''
+                }
+            }
+        }
     }
-  }
+
+    post {
+        success {
+            echo '✅ Deployment Successful! Website updated in S3.'
+        }
+        failure {
+            echo '❌ Pipeline Failed. Check logs above.'
+        }
+    }
 }
-
